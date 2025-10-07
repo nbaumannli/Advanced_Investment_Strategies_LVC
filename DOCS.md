@@ -19,6 +19,13 @@ Quick 5-minute guide to get up and running:
 - Common issues and solutions
 - Next steps
 
+### [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+Visual project structure and statistics:
+- Complete file tree
+- Code statistics
+- Key features summary
+- Quick access guide
+
 ### [PAPER_SUMMARY.md](PAPER_SUMMARY.md)
 Detailed summary of the replicated paper:
 - Research question and methodology
