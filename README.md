@@ -1,5 +1,9 @@
 # Advanced Investment Strategies: Low-Volatility Cycles
 
+[![R-CMD-check](https://github.com/nbaumannli/Advanced_Investment_Strategies_LVC/workflows/R-CMD-check/badge.svg)](https://github.com/nbaumannli/Advanced_Investment_Strategies_LVC/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
+
 This project replicates the empirical analysis from **"Low-Volatility Cycles: The Influence of Valuation and Momentum on Low-Volatility Portfolios"** by Garcia-Feijóo et al. (2015).
 
 > 📚 **New to this project?** Check out [QUICKSTART.md](QUICKSTART.md) for a 5-minute getting started guide, or see [DOCS.md](DOCS.md) for the complete documentation index.
