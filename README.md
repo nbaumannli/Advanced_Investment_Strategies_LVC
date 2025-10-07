@@ -2,6 +2,8 @@
 
 This project replicates the empirical analysis from **"Low-Volatility Cycles: The Influence of Valuation and Momentum on Low-Volatility Portfolios"** by Garcia-Feijóo et al. (2015).
 
+> 📚 **New to this project?** Check out [QUICKSTART.md](QUICKSTART.md) for a 5-minute getting started guide, or see [DOCS.md](DOCS.md) for the complete documentation index.
+
 ## Overview
 
 The paper examines how valuation (Book-to-Price ratios) and momentum affect low-volatility portfolio returns. This implementation:
@@ -182,3 +184,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Contact
 
 For questions or issues, please open an issue on GitHub.
+
+## Testing Without Real Data
+
+If you don't have access to CRSP/Compustat data, you can generate simulated data for testing:
+
+```r
+source("generate_test_data.R")
+```
+
+This will create sample CSV files in the `data/` directory that match the expected format. You can then run the full analysis pipeline with this simulated data to test the code and understand the workflow.
+
+> ⚠️ **Note:** Simulated data is for testing purposes only and will not produce meaningful research results.

@@ -22,6 +22,8 @@ _targets/
 data/*.csv
 data/*.rds
 data/*.RData
+# Keep data README
+!data/README.md
 
 # Output files (can be regenerated)
 output/
