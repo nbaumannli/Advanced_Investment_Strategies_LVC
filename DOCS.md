@@ -26,6 +26,14 @@ Detailed summary of the replicated paper:
 - Investment implications
 - Replication coverage
 
+### [REFERENCES.md](REFERENCES.md)
+Complete bibliography and citations:
+- Primary paper reference
+- Related literature
+- Data sources
+- Software and tools
+- Citation formats (BibTeX, APA)
+
 ## 🔧 Development Documentation
 
 ### [CONTRIBUTING.md](CONTRIBUTING.md)
