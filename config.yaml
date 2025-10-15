@@ -1,0 +1,36 @@
+# Configuration for Low-Volatility Cycles Analysis
+# Modify these parameters as needed
+
+# Portfolio Formation Parameters
+n_portfolios: 10                 # Number of beta-sorted portfolios
+beta_window: 60                  # Rolling window for beta calculation (months)
+min_obs: 24                      # Minimum observations required for beta
+
+# Sample Period
+start_date: "1963-07-31"        # Start of sample period
+end_date: "2013-12-31"          # End of sample period
+
+# Data Filters
+exchanges:                       # Exchange codes to include
+  - 1                            # NYSE
+  - 2                            # AMEX  
+  - 3                            # NASDAQ
+
+share_codes:                     # Share codes for common stocks
+  - 10                           # Common stock
+  - 11                           # Common stock
+
+# Portfolio Weighting
+use_nyse_breakpoints: TRUE       # Use NYSE stocks for breakpoints
+large_cap_only: TRUE             # Focus on large-cap (top 50% by market cap)
+
+# Output Options
+save_latex: TRUE                 # Save tables as LaTeX
+save_csv: TRUE                   # Save tables as CSV
+figure_format: "png"             # Figure format: png, pdf, or both
+figure_dpi: 300                  # DPI for figures
+
+# Analysis Options
+run_capm: TRUE                   # Run CAPM regressions
+run_ff3: TRUE                    # Run Fama-French 3-factor
+run_ff4: TRUE                    # Run Fama-French 4-factor (with momentum)

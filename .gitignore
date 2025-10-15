@@ -1,0 +1,47 @@
+# R and RStudio
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.user
+
+# renv
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+
+# targets
+_targets/
+.drake/
+
+# Data files (potentially sensitive)
+data/*.csv
+data/*.rds
+data/*.RData
+# Keep data README
+!data/README.md
+
+# Output files (can be regenerated)
+output/
+
+# Temporary files
+*.log
+*.aux
+*.out
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.Rproj.user/

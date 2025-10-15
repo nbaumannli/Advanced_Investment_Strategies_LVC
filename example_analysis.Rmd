@@ -1,0 +1,284 @@
+---
+title: "Low-Volatility Cycles Analysis - Example Walkthrough"
+author: "Advanced Investment Strategies LVC"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+This notebook demonstrates the complete workflow for replicating the Garcia-Feijóo et al. (2015) paper on Low-Volatility Cycles.
+
+## Paper Summary
+
+**Title:** Low-Volatility Cycles: The Influence of Valuation and Momentum on Low-Volatility Portfolios
+
+**Main Finding:** The low-volatility anomaly is driven by cyclical variations in book-to-price ratios and momentum effects.
+
+# Setup
+
+## Load Packages
+
+```{r load-packages}
+library(targets)
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(broom)
+library(ggplot2)
+library(knitr)
+
+# Source all functions
+tar_source()
+```
+
+## Configuration
+
+```{r config}
+# Analysis parameters
+N_PORTFOLIOS <- 10
+BETA_WINDOW <- 60
+MIN_OBS <- 24
+```
+
+# Data Loading and Cleaning
+
+## Load Raw Data
+
+```{r load-data, eval=FALSE}
+# Load CRSP data
+crsp_raw <- load_crsp_data("data/crsp_monthly.csv")
+
+# Load Compustat data
+compustat_raw <- load_compustat_data("data/compustat_annual.csv")
+
+# Load market returns
+market_returns <- load_market_returns("data/market_returns.csv")
+
+# Load Fama-French factors
+ff_factors <- load_ff_factors("data/ff_factors.csv")
+```
+
+## Clean and Merge Data
+
+```{r clean-data, eval=FALSE}
+# Clean CRSP
+crsp_clean <- clean_crsp_data(crsp_raw)
+
+# Clean Compustat
+compustat_clean <- clean_compustat_data(compustat_raw)
+
+# Merge datasets
+merged_data <- merge_crsp_compustat(crsp_clean, compustat_clean)
+
+# Preview
+head(merged_data) %>% kable()
+```
+
+# Portfolio Formation
+
+## Calculate Rolling Betas
+
+```{r calc-betas, eval=FALSE}
+# Calculate 60-month rolling betas
+stock_betas <- calculate_rolling_betas(
+  merged_data, 
+  market_returns, 
+  window = BETA_WINDOW
+)
+
+# Summary statistics
+summary(stock_betas$beta) %>% kable()
+```
+
+## Form Beta-Sorted Portfolios
+
+```{r form-portfolios, eval=FALSE}
+# Calculate NYSE breakpoints
+nyse_breakpoints <- calculate_nyse_breakpoints(
+  stock_betas, 
+  n_portfolios = N_PORTFOLIOS
+)
+
+# Assign stocks to portfolios
+beta_portfolios <- form_beta_portfolios(stock_betas, nyse_breakpoints)
+
+# Portfolio distribution
+table(beta_portfolios$portfolio) %>% kable()
+```
+
+# Portfolio Analysis
+
+## Book-to-Price Spreads
+
+```{r bp-spreads, eval=FALSE}
+# Calculate B/P spreads
+bp_spreads <- calculate_bp_spreads(beta_portfolios)
+
+# Plot B/P spreads over time
+bp_spreads %>%
+  filter(portfolio %in% c(1, 10)) %>%
+  ggplot(aes(x = date, y = bp_vw, color = as.factor(portfolio))) +
+  geom_line() +
+  labs(
+    title = "Book-to-Price Ratios: Low vs High Beta",
+    x = "Date",
+    y = "B/P Ratio (Value-Weighted)",
+    color = "Portfolio"
+  ) +
+  theme_minimal()
+```
+
+## Portfolio Returns
+
+```{r portfolio-returns, eval=FALSE}
+# Calculate returns
+portfolio_returns <- calculate_portfolio_returns(beta_portfolios)
+
+# Summary by portfolio
+portfolio_returns %>%
+  group_by(portfolio) %>%
+  summarise(
+    mean_ret_ew = mean(ret_ew, na.rm = TRUE) * 12 * 100,
+    sd_ret_ew = sd(ret_ew, na.rm = TRUE) * sqrt(12) * 100,
+    sharpe_ew = mean_ret_ew / sd_ret_ew
+  ) %>%
+  kable(digits = 2)
+```
+
+# Regression Analysis
+
+## CAPM Regressions
+
+```{r capm, eval=FALSE}
+# Run CAPM regressions
+capm_results <- run_capm_regressions(portfolio_returns, market_returns)
+
+# Display results
+capm_results %>%
+  select(portfolio, alpha_ew, alpha_t_ew, beta_ew, r2_ew) %>%
+  kable(digits = 3)
+```
+
+## Fama-French 4-Factor
+
+```{r ff4, eval=FALSE}
+# Run FF4 regressions
+ff4_results <- run_ff4_regressions(portfolio_returns, ff_factors)
+
+# Display results
+ff4_results %>%
+  select(portfolio, alpha_ew, alpha_t_ew, beta_mkt_ew, 
+         beta_smb_ew, beta_hml_ew, beta_umd_ew) %>%
+  kable(digits = 3)
+```
+
+# Results Visualization
+
+## Alpha Comparison
+
+```{r alpha-plot, eval=FALSE}
+# Compare CAPM and FF4 alphas
+alpha_comparison <- capm_results %>%
+  select(portfolio, capm_alpha = alpha_ew) %>%
+  left_join(
+    ff4_results %>% select(portfolio, ff4_alpha = alpha_ew),
+    by = "portfolio"
+  ) %>%
+  filter(portfolio != 0) %>%
+  pivot_longer(cols = c(capm_alpha, ff4_alpha), 
+               names_to = "model", 
+               values_to = "alpha")
+
+ggplot(alpha_comparison, aes(x = portfolio, y = alpha * 100, fill = model)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Monthly Alphas by Portfolio",
+    x = "Beta Portfolio (1=Low, 10=High)",
+    y = "Alpha (% per month)",
+    fill = "Model"
+  ) +
+  theme_minimal()
+```
+
+## Cumulative Returns
+
+```{r cumulative-returns, eval=FALSE}
+# Calculate and plot cumulative returns
+portfolio_returns %>%
+  filter(portfolio %in% c(1, 10)) %>%
+  group_by(portfolio) %>%
+  arrange(date) %>%
+  mutate(cum_ret = cumprod(1 + ret_vw) - 1) %>%
+  ggplot(aes(x = date, y = cum_ret * 100, color = as.factor(portfolio))) +
+  geom_line() +
+  labs(
+    title = "Cumulative Returns: Low vs High Beta",
+    x = "Date",
+    y = "Cumulative Return (%)",
+    color = "Portfolio"
+  ) +
+  theme_minimal()
+```
+
+# Using Targets Workflow
+
+Instead of running code chunks individually, use the targets pipeline:
+
+```{r targets-workflow, eval=FALSE}
+# Visualize pipeline
+tar_visnetwork()
+
+# Run full pipeline
+tar_make()
+
+# Load specific results
+tar_load(table3)
+tar_load(capm_results)
+
+# View loaded data
+print(table3)
+```
+
+# Interpreting Results
+
+## Key Findings
+
+1. **Low-Beta Anomaly**: Portfolio 1 (low beta) tends to outperform Portfolio 10 (high beta)
+
+2. **Book-to-Price Effect**: Low-beta stocks often have higher B/P ratios
+
+3. **Alpha Patterns**: After controlling for FF4 factors, alphas may diminish
+
+## Robustness Checks
+
+Consider testing:
+- Different portfolio formation frequencies
+- Alternative beta estimation windows
+- Subperiod analysis
+- Size and liquidity filters
+
+# Conclusion
+
+This analysis replicates the key findings of Garcia-Feijóo et al. (2015), showing how valuation and momentum influence low-volatility portfolio returns.
+
+# References
+
+Garcia-Feijóo, L., Kochard, L., Sullivan, R. N., & Wang, P. (2015). Low-Volatility Cycles: The Influence of Valuation and Momentum on Low-Volatility Portfolios. *Financial Analysts Journal*, 71(3), 47-60.
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
