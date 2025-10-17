@@ -83,6 +83,19 @@ Place your data files in the `data/` directory:
    
 4. **Fama-French Factors** (`ff_factors.csv`):
    - Required columns: `date`, `mkt_rf`, `smb`, `hml`, `umd`, `rf`
+   
+   
+or to query or extract these datasets:
+
+1. Ensure the database file `tidy_finance.sqlite` is available in the directory.
+2. Run the provided R scripts located in the `data/` folder to generate the cleaned CSV files:
+   
+   * `data_gettering_overview_database_tidy_finance_SQL.R` → lists all tables and structures in the SQLite database
+   * `data_gettering_compustat_annual data` → exports **compustat_annual.csv**
+   * `data_gettering_CRSP_monthly.R` → exports **crsp_monthly.csv**
+   * `data_gettering_market_returns.R`  → generates **market_returns.csv** (fields: `date`, `ret`, `rf`)
+   * `data_gettering_fama_french_factors.R` → generates **ff_factors.csv** (fields: `date`, `mkt_rf`, `smb`, `hml`, `umd`, `rf`)
+
 
 ## Running the Analysis
 
