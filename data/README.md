@@ -53,19 +53,62 @@ This directory should contain the input data files required for the analysis.
 **Source:** Kenneth French Data Library
 - URL: http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html
 
+Here’s your **README.md “Data Access”** section rewritten with that addition, integrated naturally and clearly into the existing flow:
+
+---
+
 ## Data Access
 
-### CRSP and Compustat
-Access via WRDS (Wharton Research Data Services):
-1. Institutional subscription required
-2. Navigate to WRDS website: https://wrds-www.wharton.upenn.edu/
-3. Query the data using the web interface or SAS/R packages
+### CRSP and Compustat (via tidy_finance SQLite Database)
 
-### Fama-French Factors
-Free access from Kenneth French's website:
-1. Download from: http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html
-2. Select "Fama/French 3 Factors" and "Momentum Factor (Mom)"
-3. Convert to CSV format with appropriate column names
+The **CRSP** and **Compustat** datasets used in this project are accessed from a **local SQLite database** built from WRDS data and distributed as `/home/shared/data/tidy_finance.sqlite`.
+
+To query or extract these datasets:
+
+1. Ensure the database file `tidy_finance.sqlite` is available in the directory.
+2. Run the provided R scripts located in the `data/` folder to generate the cleaned CSV files:
+   
+   * `data_gettering_overview_database_tidy_finance_SQL.R` → lists all tables and structures in the SQLite database
+   * `data_gettering_compustat_annual data` → exports **compustat_annual.csv**
+   * `data_gettering_CRSP_monthly.R` → exports **crsp_monthly.csv**
+
+### Fama-French Factors and Market Returns
+
+The **Fama-French 3-Factor** and **Momentum (UMD)** datasets are also stored in the same SQLite database (`tidy_finance.sqlite`), pre-downloaded from the **Kenneth R. French Data Library**.
+
+* Factors are contained in:
+
+  * `factors_ff3_monthly` — with columns `date`, `mkt_excess`, `smb`, `hml`, and `rf`
+  * `factors_momentum_monthly` — with columns `date` and `mom` (momentum factor)
+
+The following R scripts can be run from the `data/` folder to extract and prepare these datasets:
+ * `data_gettering_market_returns.R`  → generates **market_returns.csv** (fields: `date`, `ret`, `rf`)
+ * `data_gettering_fama_french_factors.R` → generates **ff_factors.csv** (fields: `date`, `mkt_rf`, `smb`, `hml`, `umd`, `rf`)
+
+
+All scripts handle:
+
+* Conversion of numeric date formats (`as.Date(date, origin = "1970-01-01")`)
+* Data validation and type casting
+* Export to the shared `/data` folder
+* Each script connects to the database using `RSQLite` and `dbplyr`, performs column selection, type conversion, and exports a ready-to-use CSV file
+
+---
+
+### Original Source References
+
+For transparency and reproducibility, the underlying datasets originate from:
+
+* **WRDS (Wharton Research Data Services)**
+  Access via institutional login:
+  [https://wrds-www.wharton.upenn.edu/](https://wrds-www.wharton.upenn.edu/)
+
+* **Kenneth R. French Data Library**
+  Free and public access:
+  [http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html](http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)
+
+---
+
 
 ## Sample Data Format
 
