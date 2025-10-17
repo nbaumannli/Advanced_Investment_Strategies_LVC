@@ -135,3 +135,4 @@ date,mkt_rf,smb,hml,umd,rf
 - Returns should be in decimal format (e.g., 0.05 for 5%)
 - Missing values should be represented as empty cells or NA
 - Files are not included in the repository due to licensing restrictions
+
