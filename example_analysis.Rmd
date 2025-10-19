@@ -1,6 +1,6 @@
 ---
 title: "Low-Volatility Cycles Analysis - Example Walkthrough"
-author: "Advanced Investment Strategies LVC"
+author: "Advanced Investment Strategies LVC "
 date: '`r Sys.Date()`'
 output:
   pdf_document:
