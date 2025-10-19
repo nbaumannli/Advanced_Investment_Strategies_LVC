@@ -1,107 +1,114 @@
-#' Clean CRSP data
+# --- Requires: dplyr, lubridate ------------------------------------------------
+# library(dplyr); library(lubridate)
+
+#' Clean CRSP data (paper-consistent)
+#'
+#' - Uses CRSP negative-price convention via abs(prc)
+#' - Keeps NYSE/AMEX/NASDAQ (exchcd 1/2/3)
+#' - Computes market cap in millions (shrout is in thousands)
 #'
 #' @param crsp_raw Raw CRSP data
 #' @return Cleaned CRSP data
 clean_crsp_data <- function(crsp_raw) {
-  if (nrow(crsp_raw) == 0) {
-    return(crsp_raw)
-  }
-  
+  if (nrow(crsp_raw) == 0) return(crsp_raw)
+
   crsp_clean <- crsp_raw %>%
-    mutate(
-      date = as.Date(date),
-      ret = as.numeric(ret),
-      prc = abs(as.numeric(prc)),
+    dplyr::mutate(
+      date   = as.Date(date),
+      ret    = as.numeric(ret),
+      prc    = abs(as.numeric(prc)),
       shrout = as.numeric(shrout),
-      mktcap = abs(prc) * shrout / 1000  # Market cap in millions
+      mktcap = prc * shrout * 1000    # USD (shrout is in thousands)
     ) %>%
-    filter(
-      !is.na(ret),
-      !is.na(prc),
-      !is.na(shrout),
-      prc > 0,
-      shrout > 0
-    ) %>%
-    # Keep only common stocks (share codes 10, 11)
-    filter(shrcd %in% c(10, 11)) %>%
-    # Keep only NYSE, AMEX, NASDAQ (exchange codes 1, 2, 3)
-    filter(exchcd %in% c(1, 2, 3))
-  
+    dplyr::filter(
+      !is.na(ret), !is.na(prc), !is.na(shrout), !is.na(exchcd),
+      shrout > 0,
+      exchcd %in% c(1, 2, 3)      # NYSE / AMEX / NASDAQ
+    )
+
   return(crsp_clean)
 }
 
-#' Clean Compustat data
+#' Clean Compustat data (paper-consistent)
 #'
-#' @param compustat_raw Raw Compustat data
-#' @return Cleaned Compustat data
+#' - Computes book equity per Fama–French (1992): BE = CEQ + TXDITC - PS
+#' - December fiscal year-end only
+#' - Requires >= 2 years per firm
+#' - Deduplicates to one row per (permno, year) (keeps latest December if duplicates)
+#'
+#' @param compustat_raw Raw Compustat data (already linked to permno)
+#' @return Cleaned Compustat data with columns: permno, datadate, year, be, at
 clean_compustat_data <- function(compustat_raw) {
-  if (nrow(compustat_raw) == 0) {
-    return(compustat_raw)
-  }
-  
+  if (nrow(compustat_raw) == 0) return(compustat_raw)
+
   compustat_clean <- compustat_raw %>%
-    mutate(
+    dplyr::mutate(
       datadate = as.Date(datadate),
-      at = as.numeric(at),          # Total assets
-      ceq = as.numeric(ceq),         # Common equity
-      pstkrv = as.numeric(pstkrv),   # Preferred stock - redemption value
-      pstkl = as.numeric(pstkl),     # Preferred stock - liquidating value
-      pstk = as.numeric(pstk),       # Preferred stock - par value
-      txditc = as.numeric(txditc)    # Deferred taxes and investment tax credit
+      at    = as.numeric(at),
+      ceq   = as.numeric(ceq),
+      pstkrv= as.numeric(pstkrv),
+      pstkl = as.numeric(pstkl),
+      pstk  = as.numeric(pstk),
+      txditc= as.numeric(txditc)
     ) %>%
-    # Calculate book equity following Fama-French
-    mutate(
-      ps = coalesce(pstkrv, pstkl, pstk, 0),
-      be = ceq + coalesce(txditc, 0) - ps
+    dplyr::mutate(
+      ps = dplyr::coalesce(pstkrv, pstkl, pstk, 0),
+      be = ceq + dplyr::coalesce(txditc, 0) - ps
     ) %>%
-    filter(
-      !is.na(be),
-      be > 0,
-      !is.na(at),
-      at > 0
-    )
-  
-  return(compustat_clean)
+    dplyr::filter(lubridate::month(datadate) == 12) %>%
+    dplyr::mutate(year = lubridate::year(datadate)) %>%
+    dplyr::filter(!is.na(be), be > 0, !is.na(at), at > 0) %>%
+    dplyr::arrange(permno, year, dplyr::desc(datadate)) %>%
+    dplyr::distinct(permno, year, .keep_all = TRUE) %>%
+    dplyr::group_by(permno) %>%
+    dplyr::filter(dplyr::n() >= 2) %>%
+    dplyr::ungroup() %>%
+    # ---- NEW: treat Compustat numbers as millions -> convert to USD
+    dplyr::mutate(
+      be_usd = be * 1e6,
+      at_usd = at * 1e6
+    ) %>%
+    dplyr::select(permno, datadate, year, be, at, be_usd, at_usd)
+
+  compustat_clean
 }
 
-#' Merge CRSP and Compustat data
+#' Merge CRSP and Compustat (clean one-to-many)
 #'
-#' @param crsp_clean Cleaned CRSP data
-#' @param compustat_clean Cleaned Compustat data
+#' - Uses last-December accounting year (t-1) for returns from Jul(t)..Jun(t+1)
+#' - Assumes compustat_clean is unique per (permno, year)
+#' - Computes book-to-market (bm) and book-to-price (bp = 1/bm)
+#'
+#' @param crsp_clean Cleaned CRSP data (can already be large-cap filtered)
+#' @param compustat_clean Cleaned Compustat data from clean_compustat_data()
 #' @return Merged dataset
+# --- Requires dplyr, lubridate ---
+
 merge_crsp_compustat <- function(crsp_clean, compustat_clean) {
-  if (nrow(crsp_clean) == 0 || nrow(compustat_clean) == 0) {
-    return(data.frame())
-  }
-  
-  # Prepare Compustat data with fiscal year end alignment
-  compustat_prep <- compustat_clean %>%
-    mutate(
-      year = year(datadate),
-      month = month(datadate)
-    ) %>%
-    select(permno, year, be, at)
-  
-  # Prepare CRSP data
+  if (nrow(crsp_clean) == 0 || nrow(compustat_clean) == 0) return(data.frame())
+
   crsp_prep <- crsp_clean %>%
-    mutate(
-      year = year(date),
-      month = month(date)
+    dplyr::mutate(
+      year      = lubridate::year(date),
+      month     = lubridate::month(date),
+      comp_year = dplyr::if_else(month >= 7, year, year - 1L)
     )
-  
-  # Merge: Book equity from t-1 matched to returns from July of year t to June of t+1
+
+  compustat_prep <- compustat_clean %>%
+    dplyr::mutate(year = if (!"year" %in% names(.)) lubridate::year(datadate) else year) %>%
+    dplyr::filter(lubridate::month(datadate) == 12) %>%
+    dplyr::arrange(permno, year, dplyr::desc(datadate)) %>%
+    dplyr::distinct(permno, year, .keep_all = TRUE) %>%
+    dplyr::select(permno, year, be_usd, at_usd)
+
   merged <- crsp_prep %>%
-    mutate(comp_year = if_else(month >= 7, year, year - 1)) %>%
-    left_join(
-      compustat_prep,
-      by = c("permno", "comp_year" = "year")
+    dplyr::left_join(compustat_prep, by = c("permno", "comp_year" = "year")) %>%
+    dplyr::filter(!is.na(mktcap), mktcap > 0, !is.na(be_usd), be_usd > 0) %>%
+    dplyr::mutate(
+      bm = be_usd / mktcap,   # Book-to-Market (BE/ME), both in USD
+      bp = bm                 # Keep bp as alias used elsewhere (e.g., spreads)
     ) %>%
-    # Calculate book-to-market ratio
-    mutate(
-      bm = be / mktcap,
-      bp = 1 / bm  # Book-to-price is inverse of price-to-book
-    ) %>%
-    filter(!is.na(bm), bm > 0)
-  
-  return(merged)
+    dplyr::filter(is.finite(bm), bm > 0)
+
+  merged
 }

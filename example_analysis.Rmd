@@ -1,8 +1,10 @@
 ---
 title: "Low-Volatility Cycles Analysis - Example Walkthrough"
 author: "Advanced Investment Strategies LVC"
-date: "`r Sys.Date()`"
-output: 
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+    toc: true
   html_document:
     toc: true
     toc_float: true
@@ -28,23 +30,46 @@ This notebook demonstrates the complete workflow for replicating the Garcia-Feij
 ## Load Packages
 
 ```{r load-packages}
-library(targets)
-library(tidyverse)
-library(lubridate)
-library(zoo)
-library(broom)
-library(ggplot2)
-library(knitr)
 
-# Source all functions
+# List of required packages
+packages <- c(
+  # Workflow and pipeline
+  "targets",
+  
+  # Data wrangling and visualization
+  "tidyverse",
+  "lubridate",
+  "zoo",
+  "broom",
+  "ggplot2",
+  "knitr",
+  
+  # Database access and I/O
+  "DBI",
+  "RSQLite",
+  "dbplyr",
+  "readr"
+)
+
+# Install any missing packages
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {
+  install.packages(packages[!installed])
+}
+
+# Load all required packages
+lapply(packages, library, character.only = TRUE)
+
+# Source all custom functions (used by {targets})
 tar_source()
+
 ```
 
 ## Configuration
 
 ```{r config}
 # Analysis parameters
-N_PORTFOLIOS <- 10
+N_PORTFOLIOS <- 5
 BETA_WINDOW <- 60
 MIN_OBS <- 24
 ```
@@ -53,7 +78,7 @@ MIN_OBS <- 24
 
 ## Load Raw Data
 
-```{r load-data, eval=FALSE}
+```{r load-data}
 # Load CRSP data
 crsp_raw <- load_crsp_data("data/crsp_monthly.csv")
 
@@ -69,58 +94,202 @@ ff_factors <- load_ff_factors("data/ff_factors.csv")
 
 ## Clean and Merge Data
 
-```{r clean-data, eval=FALSE}
+```{r clean-data}
 # Clean CRSP
 crsp_clean <- clean_crsp_data(crsp_raw)
+
+# --- Price screen (abs(prc) in [2, 1000]) + NYSE large-cap breakpoint (monthly) ---
+crsp_sz <- crsp_clean %>%
+  # price screen (CRSP uses negative sign convention → use abs)
+  filter(!is.na(prc), abs(prc) >= 2, abs(prc) <= 1000) %>%
+  mutate(
+    mktcap = abs(prc) * shrout * 1000  # USD
+  ) %>%
+  # guards
+  filter(!is.na(mktcap), mktcap > 0, !is.na(exchcd), !is.na(date), !is.na(permno))
+
+# NYSE 67th-percentile size cutoff per month
+nyse_cut <- crsp_sz %>%
+  filter(exchcd == 1L) %>%
+  group_by(date) %>%
+  summarize(cut67 = quantile(mktcap, probs = 2/3, na.rm = TRUE), .groups = "drop")
+
+# Keep large-cap universe (apply NYSE cutoff to all exchanges)
+crsp_largecap <- crsp_sz %>%
+  inner_join(nyse_cut, by = "date") %>%
+  filter(mktcap >= cut67)
 
 # Clean Compustat
 compustat_clean <- clean_compustat_data(compustat_raw)
 
+# Make Compustat unique at (permno, year)
+compustat_unique <- compustat_clean %>%
+  dplyr::mutate(year = if (!"year" %in% names(.)) lubridate::year(datadate) else year) %>%
+  dplyr::arrange(permno, year, dplyr::desc(datadate), dplyr::desc(at), dplyr::desc(be)) %>%
+  dplyr::group_by(permno, year) %>%
+  dplyr::slice_head(n = 1) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(permno, datadate, year, be_usd, at_usd)  # << keep *_usd
+
+
 # Merge datasets
-merged_data <- merge_crsp_compustat(crsp_clean, compustat_clean)
+merged_data <- merge_crsp_compustat(crsp_largecap, compustat_unique)
 
 # Preview
 head(merged_data) %>% kable()
+
 ```
 
 # Portfolio Formation
 
-## Calculate Rolling Betas
+## Calculate Rolling Betas (with parallel computation)
 
-```{r calc-betas, eval=FALSE}
-# Calculate 60-month rolling betas
-stock_betas <- calculate_rolling_betas(
-  merged_data, 
-  market_returns, 
-  window = BETA_WINDOW
+```{r calc-betas-parallel, message=FALSE, warning=FALSE}
+# Packages
+req_pkgs <- c("future", "future.apply")
+new <- req_pkgs[!req_pkgs %in% rownames(installed.packages())]
+if (length(new)) install.packages(new, quiet = TRUE)
+lapply(req_pkgs, library, character.only = TRUE)
+
+# --- Detect and cap cores ---
+n_cores_total <- parallel::detectCores(logical = TRUE)
+n_cores <- min( max(1, n_cores_total - 1), 32 )  # cap at 32 workers to avoid connection overflow
+
+cat("Detected", n_cores_total, "cores → using", n_cores, "workers\n")
+
+# Optional: limit BLAS threads per worker
+if ("data.table" %in% .packages()) data.table::setDTthreads(1)
+if ("RhpcBLASctl" %in% rownames(installed.packages())) {
+  library(RhpcBLASctl)
+  blas_set_num_threads(1)
+  omp_set_num_threads(1)
+}
+
+# Set up plan
+plan(multisession, workers = n_cores)
+
+# Split data by stock
+id_col <- "permno"
+stopifnot(id_col %in% names(merged_data))
+by_stock <- split(merged_data, merged_data[[id_col]], drop = TRUE)
+
+# Compute rolling betas in parallel
+beta_list <- future.apply::future_lapply(
+  by_stock,
+  function(df) calculate_rolling_betas(df, market_returns, window = BETA_WINDOW),
+  future.seed = TRUE
 )
 
-# Summary statistics
-summary(stock_betas$beta) %>% kable()
+stock_betas <- dplyr::bind_rows(beta_list)
+
+plan(sequential)  # restore default
+
+summary(stock_betas$beta) |>
+  tibble::enframe(name = "stat", value = "beta") |>
+  knitr::kable()
+
 ```
 
 ## Form Beta-Sorted Portfolios
 
-```{r form-portfolios, eval=FALSE}
-# Calculate NYSE breakpoints
-nyse_breakpoints <- calculate_nyse_breakpoints(
-  stock_betas, 
-  n_portfolios = N_PORTFOLIOS
-)
+```{r form-portfolios}
+# Keep valid betas
+betas_ok <- stock_betas %>%
+  dplyr::filter(!is.na(beta))
 
-# Assign stocks to portfolios
-beta_portfolios <- form_beta_portfolios(stock_betas, nyse_breakpoints)
+# Assign stocks to portfolios by within-month beta quantiles
+beta_portfolios <- betas_ok %>%
+  dplyr::group_by(date) %>%
+  dplyr::mutate(portfolio = dplyr::ntile(beta, N_PORTFOLIOS)) %>%
+  dplyr::ungroup()
 
-# Portfolio distribution
-table(beta_portfolios$portfolio) %>% kable()
+# Portfolio distribution check
+table(beta_portfolios$portfolio) %>% knitr::kable()
+
+# --- Basic distribution checks ------------------------------------------------
+cat("\nNumber of stocks per beta portfolio:\n")
+table(beta_portfolios$portfolio)
+
+cat("\nSample dates range:\n")
+range(beta_portfolios$date)
+
+cat("\nObservations per month (should be stable over time):\n")
+beta_portfolios %>%
+  dplyr::count(date) %>%
+  summary(n)
+
+# --- Average beta by portfolio ------------------------------------------------
+beta_summary <- beta_portfolios %>%
+  dplyr::group_by(portfolio) %>%
+  dplyr::summarise(
+    n_obs = dplyr::n(),
+    mean_beta = mean(beta, na.rm = TRUE),
+    sd_beta   = sd(beta, na.rm = TRUE),
+    min_beta  = min(beta, na.rm = TRUE),
+    max_beta  = max(beta, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+knitr::kable(beta_summary, caption = "Average Beta by Portfolio")
+
+# --- Merge with CRSP large-cap data to inspect market cap & returns -----------
+beta_panel <- beta_portfolios %>%
+  dplyr::select(permno, date, portfolio) %>%
+  dplyr::inner_join(
+    crsp_largecap %>% dplyr::select(permno, date, ret, mktcap),
+    by = c("permno", "date")
+  )
+
+# 3) Average market cap and mean raw return per portfolio
+capret_summary <- beta_panel %>%
+  dplyr::group_by(portfolio) %>%
+  dplyr::summarise(
+    avg_mktcap_mil = mean(mktcap / 1e6, na.rm = TRUE),   # in billions
+    mean_ret = mean(ret, na.rm = TRUE),
+    sd_ret   = sd(ret, na.rm = TRUE),
+    n_obs    = dplyr::n(),
+    .groups  = "drop"
+  )
+
+knitr::kable(capret_summary, caption = "Average Market Cap and Return by Portfolio")
+
+# --- Optional: Time-series consistency check ---------------------------------
+portfolio_counts <- beta_portfolios %>%
+  dplyr::group_by(date, portfolio) %>%
+  dplyr::summarise(n = dplyr::n(), .groups = "drop")
+
+ggplot2::ggplot(portfolio_counts,
+                ggplot2::aes(x = date, y = n, color = as.factor(portfolio))) +
+  ggplot2::geom_line(alpha = 0.7) +
+  ggplot2::labs(title = "Stock Count per Beta Portfolio over Time",
+                x = NULL, y = "Count",
+                color = "Portfolio") +
+  ggplot2::theme_minimal()
+
+
 ```
 
 # Portfolio Analysis
 
 ## Book-to-Price Spreads
 
-```{r bp-spreads, eval=FALSE}
+```{r bp-spreads}
 # Calculate B/P spreads
+
+# join portfolios to accounting+CRSP panel to get bp and mktcap
+beta_panel <- beta_portfolios %>%
+  dplyr::select(permno, date, portfolio) %>%
+  dplyr::inner_join(
+    merged_data %>% dplyr::select(permno, date, bp, mktcap, ret),
+    by = c("permno","date")
+  ) %>%
+  dplyr::arrange(permno, date) %>%
+  dplyr::group_by(permno) %>%
+  dplyr::mutate(w_lag = dplyr::lag(mktcap)) %>%
+  dplyr::ungroup()
+
+
+
 bp_spreads <- calculate_bp_spreads(beta_portfolios)
 
 # Plot B/P spreads over time
@@ -139,7 +308,7 @@ bp_spreads %>%
 
 ## Portfolio Returns
 
-```{r portfolio-returns, eval=FALSE}
+```{r portfolio-returns}
 # Calculate returns
 portfolio_returns <- calculate_portfolio_returns(beta_portfolios)
 
@@ -158,7 +327,7 @@ portfolio_returns %>%
 
 ## CAPM Regressions
 
-```{r capm, eval=FALSE}
+```{r capm}
 # Run CAPM regressions
 capm_results <- run_capm_regressions(portfolio_returns, market_returns)
 
@@ -170,7 +339,7 @@ capm_results %>%
 
 ## Fama-French 4-Factor
 
-```{r ff4, eval=FALSE}
+```{r ff4}
 # Run FF4 regressions
 ff4_results <- run_ff4_regressions(portfolio_returns, ff_factors)
 
@@ -185,7 +354,7 @@ ff4_results %>%
 
 ## Alpha Comparison
 
-```{r alpha-plot, eval=FALSE}
+```{r alpha-plot}
 # Compare CAPM and FF4 alphas
 alpha_comparison <- capm_results %>%
   select(portfolio, capm_alpha = alpha_ew) %>%
@@ -212,7 +381,7 @@ ggplot(alpha_comparison, aes(x = portfolio, y = alpha * 100, fill = model)) +
 
 ## Cumulative Returns
 
-```{r cumulative-returns, eval=FALSE}
+```{r cumulative-returns}
 # Calculate and plot cumulative returns
 portfolio_returns %>%
   filter(portfolio %in% c(1, 10)) %>%

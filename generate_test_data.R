@@ -1,5 +1,5 @@
 #' Generate Simulated Data for Testing
-#' 
+#'
 #' This script creates simulated CRSP, Compustat, market returns, and FF factor data
 #' for testing the analysis pipeline without requiring actual data access.
 
@@ -64,7 +64,7 @@ compustat_data <- expand_grid(
     # Preferred stock components (mostly NA or small)
     pstkrv = if_else(runif(n()) < 0.2, runif(n(), 0, 50), NA_real_),
     pstkl = if_else(is.na(pstkrv) & runif(n()) < 0.1, runif(n(), 0, 50), NA_real_),
-    pstk = if_else(is.na(pstkrv) & is.na(pstkl) & runif(n()) < 0.3, 
+    pstk = if_else(is.na(pstkrv) & is.na(pstkl) & runif(n()) < 0.3,
                    runif(n(), 0, 50), NA_real_),
     # Deferred taxes (10-20% of equity)
     txditc = ceq * runif(n(), 0.1, 0.2)
@@ -118,3 +118,4 @@ cat("  source('run_analysis.R')\n")
 cat("  # or\n")
 cat("  library(targets)\n")
 cat("  tar_make()\n")
+

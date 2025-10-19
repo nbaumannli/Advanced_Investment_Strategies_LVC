@@ -10,16 +10,16 @@ if (!require("targets")) {
 }
 
 # Check if renv is initialized
-if (!file.exists("renv.lock")) {
-  message("renv.lock not found. Initializing renv...")
-  if (!require("renv")) install.packages("renv")
-  renv::init()
-} else {
+#if (!file.exists("renv.lock")) {
+#  message("renv.lock not found. Initializing renv...")
+#  if (!require("renv")) install.packages("renv")
+#  renv::init()
+#} else {
   # Restore packages from lockfile
-  if (!require("renv")) install.packages("renv")
-  message("Restoring packages from renv.lock...")
-  renv::restore()
-}
+#  if (!require("renv")) install.packages("renv")
+#  message("Restoring packages from renv.lock...")
+#  renv::restore()
+#}
 
 # Visualize the pipeline (optional)
 message("\n=== Pipeline Structure ===")

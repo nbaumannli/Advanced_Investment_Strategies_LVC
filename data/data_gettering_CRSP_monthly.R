@@ -21,14 +21,16 @@
 
 
 # Ensure required DB packages are installed and loaded
-# packages <- c("dplyr", "dbplyr", "DBI", "RSQLite", "readr")
-# installed <- packages %in% rownames(installed.packages())
-#if (any(!installed)) install.packages(packages[!installed])
-# lapply(packages, library, character.only = TRUE)
+packages <- c("dplyr", "dbplyr", "DBI", "RSQLite", "readr")
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) install.packages(packages[!installed])
+lapply(packages, library, character.only = TRUE)
 
 
 # Connect to the tidy_finance SQLite database
 db_path <- "/home/shared/data/tidy_finance.sqlite"
+con <- dbConnect(RSQLite::SQLite(), db_path, extended_types = TRUE)
+
 tidy_finance <- dbConnect(
   SQLite(),
   db_path,
@@ -128,7 +130,6 @@ cm %>%
     max_ret = max(ret, na.rm = TRUE)
   ) %>% collect()
 
-------
 # 6) exchcd — derive from labels (discover labels)
 # We’ll see which label column is populated and with what values.
 # Distinct labels for both candidates
@@ -162,10 +163,7 @@ crsp_monthly <- tbl(con, "crsp_monthly") %>%
       primaryexch == "Q" ~ 3L,
       TRUE ~ NA_integer_
     ),
-    # shrcd not stored — leave NA or use proxy (10 = common stock)
-    shrcd = NA_integer_
-    # alternatively:
-    # shrcd = 10L
+    shrcd = 10L
   ) %>%
   # Keep only major exchanges
   filter(exchcd %in% c(1L, 2L, 3L)) %>%
