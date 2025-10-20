@@ -43,6 +43,8 @@ packages <- c(
   "broom",
   "ggplot2",
   "knitr",
+  "kableExtra",
+  "dplyr",
   
   # Database access and I/O
   "DBI",
@@ -50,6 +52,7 @@ packages <- c(
   "dbplyr",
   "readr"
 )
+
 
 # Install any missing packages
 installed <- packages %in% rownames(installed.packages())
@@ -294,7 +297,7 @@ bp_spreads <- calculate_bp_spreads(beta_portfolios)
 
 # Plot B/P spreads over time
 bp_spreads %>%
-  filter(portfolio %in% c(1, 10)) %>%
+  filter(portfolio %in% c(1,2,3,4,5)) %>%
   ggplot(aes(x = date, y = bp_vw, color = as.factor(portfolio))) +
   geom_line() +
   labs(
@@ -321,6 +324,25 @@ portfolio_returns %>%
     sharpe_ew = mean_ret_ew / sd_ret_ew
   ) %>%
   kable(digits = 2)
+
+portfolio_returns %>%
+  group_by(portfolio) %>%
+  summarise(
+    `Mean Return (%)` = mean(ret_ew, na.rm = TRUE) * 12 * 100,
+    `SD (%)` = sd(ret_ew, na.rm = TRUE) * sqrt(12) * 100,
+    `Sharpe Ratio` = (`Mean Return (%)`) / (`SD (%)`)
+  ) %>%
+  mutate(across(where(is.numeric), round, 2)) %>%
+  kable(
+    caption = "Portfolio Performance Summary (Equal-Weighted Returns)",
+    align = "c"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  )
+
 ```
 
 # Regression Analysis
@@ -384,7 +406,7 @@ ggplot(alpha_comparison, aes(x = portfolio, y = alpha * 100, fill = model)) +
 ```{r cumulative-returns}
 # Calculate and plot cumulative returns
 portfolio_returns %>%
-  filter(portfolio %in% c(1, 10)) %>%
+  filter(portfolio %in% c(1,2,3,4,5)) %>%
   group_by(portfolio) %>%
   arrange(date) %>%
   mutate(cum_ret = cumprod(1 + ret_vw) - 1) %>%
